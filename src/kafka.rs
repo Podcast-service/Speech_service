@@ -1,0 +1,164 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::{Context, Result};
+use chrono::Utc;
+use rdkafka::config::ClientConfig;
+use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+const TOPIC_SUBTITLE: &str = "media.subtitle";
+const TOPIC_MEDIA_WORKER: &str = "media.worker";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubtitleRequestedEvent {
+    pub file_id: String,
+    pub source_bucket: String,
+    pub source_object_key: String,
+    pub language: Option<String>,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubtitleReadyEvent {
+    pub file_id: String,
+    pub bucket: String,
+    pub vtt_object_key: String,
+    pub srt_object_key: String,
+    pub language: String,
+    pub segments: usize,
+    pub ready_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubtitleErrorEvent {
+    pub file_id: String,
+    pub stage: String,
+    pub error_message: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaWorkerSubtitleReadyEvent {
+    pub file_id: String,
+    pub hls_path: String,
+    pub subtitle_vtt_path: String,
+    pub subtitle_srt_path: String,
+    pub language: String,
+    pub subtitle_ready_at: String,
+}
+
+pub struct KafkaProducer {
+    producer: FutureProducer,
+}
+
+impl KafkaProducer {
+    pub fn new(brokers: &str) -> Result<Self> {
+        let producer = ClientConfig::new()
+            .set("bootstrap.servers", brokers)
+            .set("message.timeout.ms", "5000")
+            .set("message.send.max.retries", "10")
+            .set("retry.backoff.ms", "500")
+            .set("reconnect.backoff.ms", "500")
+            .set("reconnect.backoff.max.ms", "10000")
+            .set("socket.keepalive.enable", "true")
+            .create::<FutureProducer>()
+            .context("Failed to create Kafka producer")?;
+
+        Ok(Self { producer })
+    }
+
+    pub async fn send_subtitle_ready(
+        &self,
+        file_id: Uuid,
+        bucket: &str,
+        vtt_object_key: &str,
+        srt_object_key: &str,
+        language: &str,
+        segments: usize,
+    ) -> Result<()> {
+        let event = SubtitleReadyEvent {
+            file_id: file_id.to_string(),
+            bucket: bucket.to_string(),
+            vtt_object_key: vtt_object_key.to_string(),
+            srt_object_key: srt_object_key.to_string(),
+            language: language.to_string(),
+            segments,
+            ready_at: Utc::now().to_rfc3339(),
+        };
+
+        self.send_json(&event.file_id, &event).await
+    }
+
+    pub async fn send_subtitle_error(
+        &self,
+        file_id: Uuid,
+        stage: &str,
+        error_message: &str,
+    ) -> Result<()> {
+        let event = SubtitleErrorEvent {
+            file_id: file_id.to_string(),
+            stage: stage.to_string(),
+            error_message: error_message.to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+        };
+
+        self.send_json(&event.file_id, &event).await
+    }
+
+    pub async fn send_worker_subtitle_ready(
+        &self,
+        file_id: Uuid,
+        hls_path: &str,
+        subtitle_vtt_path: &str,
+        subtitle_srt_path: &str,
+        language: &str,
+    ) -> Result<()> {
+        let event = MediaWorkerSubtitleReadyEvent {
+            file_id: file_id.to_string(),
+            hls_path: hls_path.to_string(),
+            subtitle_vtt_path: subtitle_vtt_path.to_string(),
+            subtitle_srt_path: subtitle_srt_path.to_string(),
+            language: language.to_string(),
+            subtitle_ready_at: Utc::now().to_rfc3339(),
+        };
+
+        self.send_json_to_topic(TOPIC_MEDIA_WORKER, &event.file_id, &event)
+            .await
+    }
+
+    async fn send_json<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
+        self.send_json_to_topic(TOPIC_SUBTITLE, key, value).await
+    }
+
+    async fn send_json_to_topic<T: Serialize>(
+        &self,
+        topic: &str,
+        key: &str,
+        value: &T,
+    ) -> Result<()> {
+        let payload = serde_json::to_string(value)?;
+        let record = FutureRecord::to(topic).key(key).payload(&payload);
+
+        self.producer
+            .send(record, Duration::from_secs(30))
+            .await
+            .map_err(|(err, _)| anyhow::anyhow!("Kafka send failed: {}", err))?;
+
+        Ok(())
+    }
+
+    pub fn flush(&self) -> Result<()> {
+        self.producer
+            .flush(Duration::from_secs(10))
+            .context("Failed to flush Kafka producer")?;
+        Ok(())
+    }
+}
+
+pub type SharedKafkaProducer = Arc<KafkaProducer>;
+
+pub fn new_producer(brokers: &str) -> Result<SharedKafkaProducer> {
+    Ok(Arc::new(KafkaProducer::new(brokers)?))
+}

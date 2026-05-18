@@ -1,0 +1,5 @@
+pyannote.audio==3.3.2
+soundfile==0.12.1
+torch>=2.2.0
+torchaudio>=2.2.0
+matplotlib>=3.8.0

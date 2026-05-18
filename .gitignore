@@ -1,0 +1,23 @@
+/target/
+/.venv/
+
+# Rust/Cargo temporary files
+**/*.rs.bk
+
+# Python cache and virtualenv artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment files
+.env
+.env.*
+
+# macOS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime logs and local temp artifacts
+*.log
+tmp/
