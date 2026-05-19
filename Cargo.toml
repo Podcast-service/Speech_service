@@ -1,0 +1,26 @@
+[package]
+name = "media_subtitle_worker"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+whisper-rs-backend = ["dep:whisper-rs"]
+
+[dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+aws-config = "1.8.14"
+aws-credential-types = "1.2.13"
+aws-sdk-s3 = "1.124.0"
+chrono = { version = "0.4", features = ["serde"] }
+hound = "3.5"
+rdkafka = { version = "0.39.0", features = ["cmake-build"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+uuid = { version = "1", features = ["v4", "serde"] }
+whisper-rs = { version = "0.16.0", optional = true }
