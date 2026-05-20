@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use rdkafka::config::ClientConfig;
@@ -15,9 +16,11 @@ use crate::transcriber::SharedTranscriber;
 
 const TOPIC: &str = "media.subtitle";
 const GROUP_ID: &str = "media-subtitle-worker-service";
+const WORKING_HEARTBEAT_INTERVAL_SECONDS: u64 = 120;
 
 pub async fn run_subtitle_consumer(
     brokers: &str,
+    worker_id: &str,
     storage: Arc<dyn StorageBackend>,
     kafka: SharedKafkaProducer,
     transcriber: SharedTranscriber,
@@ -71,6 +74,7 @@ pub async fn run_subtitle_consumer(
 
                 handle_subtitle_requested(
                     event,
+                    worker_id,
                     &storage,
                     &kafka,
                     &transcriber,
@@ -90,6 +94,7 @@ pub async fn run_subtitle_consumer(
 
 async fn handle_subtitle_requested(
     event: SubtitleRequestedEvent,
+    worker_id: &str,
     storage: &Arc<dyn StorageBackend>,
     kafka: &SharedKafkaProducer,
     transcriber: &SharedTranscriber,
@@ -113,9 +118,10 @@ async fn handle_subtitle_requested(
     let kafka = kafka.clone();
     let transcriber = transcriber.clone();
     let subtitle_bucket = subtitle_bucket.to_string();
+    let worker_id = worker_id.to_string();
 
     tokio::spawn(async move {
-        pipeline::run_pipeline(
+        let pipeline = pipeline::run_pipeline(
             file_id,
             event,
             storage,
@@ -123,7 +129,21 @@ async fn handle_subtitle_requested(
             transcriber,
             &subtitle_bucket,
             max_retries,
-        )
-        .await;
+        );
+
+        tokio::select! {
+            _ = pipeline => {}
+            _ = log_working_heartbeat(worker_id, file_id) => {}
+        }
     });
+}
+
+async fn log_working_heartbeat(worker_id: String, file_id: Uuid) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(WORKING_HEARTBEAT_INTERVAL_SECONDS)).await;
+        info!(
+            "subtitle_worker working: worker_id={}, file_id={}",
+            worker_id, file_id
+        );
+    }
 }
