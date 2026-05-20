@@ -10,6 +10,7 @@ use std::{sync::Arc, time::Duration};
 
 use tracing::{error, info};
 use transcriber::{build_transcriber, SharedTranscriber};
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
@@ -32,6 +33,7 @@ async fn main() {
         .unwrap_or_else(|_| "3".to_string())
         .parse::<u32>()
         .expect("SUBTITLE_MAX_RETRIES must be a positive integer");
+    let worker_id = subtitle_worker_id();
 
     let transcriber_backend =
         std::env::var("TRANSCRIBER_BACKEND").unwrap_or_else(|_| "mock".to_string());
@@ -56,13 +58,14 @@ async fn main() {
     .expect("Failed to initialize transcriber backend");
 
     info!(
-        "subtitle_worker started (kafka={}, bucket={})",
-        kafka_brokers, subtitle_bucket
+        "subtitle_worker started (worker_id={}, kafka={}, bucket={})",
+        worker_id, kafka_brokers, subtitle_bucket
     );
 
     loop {
         if let Err(e) = consumer::run_subtitle_consumer(
             &kafka_brokers,
+            &worker_id,
             storage.clone(),
             kafka.clone(),
             transcriber.clone(),
@@ -92,4 +95,16 @@ fn consumer_restart_delay() -> Duration {
         .filter(|seconds| *seconds > 0)
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_secs(5))
+}
+
+fn subtitle_worker_id() -> String {
+    std::env::var("SUBTITLE_WORKER_ID")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("HOSTNAME")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
