@@ -8,7 +8,7 @@
 - RustFS / S3-compatible storage
 - Whisper model file, если используется `whisper-rs`
 
-## Самодостаточность сервиса
+## Самодостаточность сервисаf
 
 Директория `Media_subtitle_worker` содержит всё, что нужно для сборки и запуска самого subtitle worker:
 
