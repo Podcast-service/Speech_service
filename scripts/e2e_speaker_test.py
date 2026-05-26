@@ -12,7 +12,7 @@ import boto3
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_MEDIA_API_DIR = SCRIPT_DIR.parent.parent / "Media_api"
+DEFAULT_MEDIA_API_DIR = SCRIPT_DIR.parent.parent / "Media_upload_service"
 
 
 def run(
@@ -82,7 +82,7 @@ def ensure_local_services() -> None:
         )
 
     running = set(result.stdout.decode("utf-8", errors="ignore").splitlines())
-    required_services = ["kafka", "rustfs", "media-worker", "media-subtitle-worker"]
+    required_services = ["kafka", "media-worker", "media-subtitle-worker"]
     missing = [service for service in required_services if service not in running]
     if missing:
         raise RuntimeError(
@@ -153,17 +153,17 @@ def prepare_input_audio(source_path: Path, target_wav: Path, max_seconds: int | 
     run(cmd)
 
 
-def put_audio_into_media_worker(local_wav: Path, file_id: str) -> str:
-    target_dir = "/tmp/media_uploads"
-    target_path = f"{target_dir}/e2e_{file_id}.wav"
-
-    mkdir_cmd, cwd = compose_cmd("exec", "-T", "media-worker", "mkdir", "-p", target_dir)
-    run(mkdir_cmd, cwd=cwd)
-
-    cp_cmd, cwd = compose_cmd("cp", str(local_wav), f"media-worker:{target_path}")
-    run(cp_cmd, cwd=cwd)
-
-    return target_path
+def upload_source_audio(local_wav: Path, bucket: str, file_id: str) -> tuple[str, str]:
+    object_key = f"media/{file_id}/source.wav"
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=os.getenv("S3_ENDPOINT_URL", "https://s3.twcstorage.ru"),
+        aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+        region_name=os.getenv("S3_REGION", "ru-1"),
+    )
+    s3.upload_file(str(local_wav), bucket, object_key)
+    return object_key, f"s3://{bucket}/{object_key}"
 
 
 def produce(topic: str, payload: dict) -> None:
@@ -218,10 +218,10 @@ def consume_topic(topic: str, timeout_ms: int = 5000) -> list[dict]:
 def fetch_text(bucket: str, key: str) -> str:
     s3 = boto3.client(
         "s3",
-        endpoint_url="http://localhost:9000",
-        aws_access_key_id="rustfsadmin",
-        aws_secret_access_key="rustfsadmin",
-        region_name="us-east-1",
+        endpoint_url=os.getenv("S3_ENDPOINT_URL", "https://s3.twcstorage.ru"),
+        aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+        region_name=os.getenv("S3_REGION", "ru-1"),
     )
     obj = s3.get_object(Bucket=bucket, Key=key)
     return obj["Body"].read().decode("utf-8", errors="ignore")
@@ -230,10 +230,10 @@ def fetch_text(bucket: str, key: str) -> str:
 def list_objects(bucket: str, prefix: str) -> list[str]:
     s3 = boto3.client(
         "s3",
-        endpoint_url="http://localhost:9000",
-        aws_access_key_id="rustfsadmin",
-        aws_secret_access_key="rustfsadmin",
-        region_name="us-east-1",
+        endpoint_url=os.getenv("S3_ENDPOINT_URL", "https://s3.twcstorage.ru"),
+        aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+        region_name=os.getenv("S3_REGION", "ru-1"),
     )
     paginator = s3.get_paginator("list_objects_v2")
     keys: list[str] = []
@@ -308,6 +308,8 @@ def main() -> int:
 
     if not os.getenv("PYANNOTE_HF_TOKEN"):
         raise RuntimeError("Set PYANNOTE_HF_TOKEN before running this E2E test")
+    if not os.getenv("S3_ACCESS_KEY_ID") or not os.getenv("S3_SECRET_ACCESS_KEY"):
+        raise RuntimeError("Set S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY before running this E2E test")
 
     required_binaries = ["docker", "ffmpeg"]
     if args.input_file is None:
@@ -319,6 +321,7 @@ def main() -> int:
     ensure_local_services()
 
     file_id = str(uuid.uuid4())
+    podcast_id = f"podcast_{uuid.uuid4()}"
     wav_path = Path(f"/tmp/e2e_input_{file_id}.wav")
 
     if args.input_file is not None:
@@ -331,19 +334,24 @@ def main() -> int:
     else:
         make_audio(wav_path)
 
-    worker_temp_path = put_audio_into_media_worker(wav_path, file_id)
+    storage_bucket = os.getenv("S3_BUCKET", "4c5face5-544c-4bc2-a2e0-57a24d243af3")
+    _, audio_url_file = upload_source_audio(wav_path, storage_bucket, file_id)
+    print(f"uploaded source audio to {audio_url_file}")
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     upload_event = {
+        "event": "uploaded",
         "file_id": file_id,
+        "podcast_id": podcast_id,
         "author_id": "e2e-speaker-test",
-        "size_bytes": wav_path.stat().st_size,
+        "need_subtitle": True,
+        "audio_size_file": wav_path.stat().st_size,
         "original_format": "audio/wav",
-        "temp_path": worker_temp_path,
+        "audio_url_file": audio_url_file,
         "uploaded_at": now,
     }
     produce("media", upload_event)
-    print(f"sent media.uploaded file_id={file_id}")
+    print(f"sent media.uploaded file_id={file_id}, podcast_id={podcast_id}")
 
     time.sleep(args.wait_upload_seconds)
 
@@ -358,33 +366,6 @@ def main() -> int:
     )
     if converted_event is None:
         raise RuntimeError("No media.worker.converted event found")
-
-    source_prefix = f"media/{file_id}/"
-    keys = list_objects("audio-hls", source_prefix)
-    segment_keys = sorted(
-        key
-        for key in keys
-        if key.endswith(".m4s") and not key.endswith("init.mp4") and "/256k/" in key
-    )
-    if not segment_keys:
-        segment_keys = sorted(
-            key for key in keys if key.endswith(".m4s") and not key.endswith("init.mp4")
-        )
-    if not segment_keys:
-        raise RuntimeError(f"No .m4s segments found under prefix: {source_prefix}")
-    source_object_key = segment_keys[0]
-
-    subtitle_request = {
-        "file_id": file_id,
-        "source_bucket": "audio-hls",
-        "source_object_key": source_object_key,
-        "language": "ru",
-        "requested_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    produce("media.subtitle", subtitle_request)
-    print(
-        f"sent media.subtitle.requested file_id={file_id}, source_object_key={source_object_key}"
-    )
 
     ready = wait_for_event(
         "media.subtitle",

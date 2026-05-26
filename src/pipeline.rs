@@ -178,7 +178,7 @@ async fn execute_pipeline(
     };
 
     let transcript = transcriber
-        .transcribe(&temp_audio, event.language.as_deref())
+        .transcribe(&temp_audio, event.language.as_deref(), event.num_speakers)
         .await
         .context("transcribe audio")?;
 
