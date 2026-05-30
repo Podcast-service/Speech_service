@@ -32,7 +32,12 @@ pub struct Transcript {
 
 #[async_trait]
 pub trait Transcriber: Send + Sync {
-    async fn transcribe(&self, input_path: &Path, language: Option<&str>) -> Result<Transcript>;
+    async fn transcribe(
+        &self,
+        input_path: &Path,
+        language: Option<&str>,
+        num_speakers: Option<u32>,
+    ) -> Result<Transcript>;
 }
 
 pub type SharedTranscriber = Arc<dyn Transcriber>;
@@ -62,7 +67,12 @@ pub struct MockTranscriber;
 
 #[async_trait]
 impl Transcriber for MockTranscriber {
-    async fn transcribe(&self, _input_path: &Path, language: Option<&str>) -> Result<Transcript> {
+    async fn transcribe(
+        &self,
+        _input_path: &Path,
+        language: Option<&str>,
+        _num_speakers: Option<u32>,
+    ) -> Result<Transcript> {
         let lang = language.unwrap_or("ru").to_string();
 
         Ok(Transcript {
@@ -124,7 +134,12 @@ impl WhisperRsTranscriber {
 
 #[async_trait]
 impl Transcriber for WhisperRsTranscriber {
-    async fn transcribe(&self, input_path: &Path, language: Option<&str>) -> Result<Transcript> {
+    async fn transcribe(
+        &self,
+        input_path: &Path,
+        language: Option<&str>,
+        num_speakers: Option<u32>,
+    ) -> Result<Transcript> {
         #[cfg(feature = "whisper-rs-backend")]
         {
             let model_path = self.model_path.clone();
@@ -144,6 +159,7 @@ impl Transcriber for WhisperRsTranscriber {
                     &pyannote_python_bin,
                     &pyannote_script_path,
                     pyannote_hf_token.as_deref(),
+                    num_speakers,
                 )
             })
             .await
@@ -156,6 +172,7 @@ impl Transcriber for WhisperRsTranscriber {
         {
             let _input_path = input_path;
             let _language = language;
+            let _num_speakers = num_speakers;
             let _touch = &self.model_path;
             let _py = &self.pyannote_enabled;
             let _py_bin = &self.pyannote_python_bin;
@@ -191,6 +208,7 @@ fn transcribe_with_whisper_rs(
     pyannote_python_bin: &str,
     pyannote_script_path: &str,
     pyannote_hf_token: Option<&str>,
+    num_speakers: Option<u32>,
 ) -> Result<Transcript> {
     let wav_path = decode_to_wav_16khz_mono(input_path)?;
     let samples = read_wav_f32(&wav_path)?;
@@ -262,6 +280,7 @@ fn transcribe_with_whisper_rs(
             pyannote_python_bin,
             pyannote_script_path,
             pyannote_hf_token,
+            num_speakers,
         )?;
         assign_speakers(&mut segments, &diarization_segments);
     }
@@ -386,6 +405,7 @@ fn run_pyannote_diarization(
     python_bin: &str,
     script_path: &str,
     hf_token: Option<&str>,
+    num_speakers: Option<u32>,
 ) -> Result<Vec<DiarizationSegment>> {
     let output_json = std::env::temp_dir().join(format!("pyannote_{}.json", Uuid::new_v4()));
 
@@ -407,6 +427,10 @@ fn run_pyannote_diarization(
 
     if let Some(token) = hf_token {
         command.arg("--hf-token").arg(token);
+    }
+
+    if let Some(num_speakers) = num_speakers {
+        command.env("PYANNOTE_NUM_SPEAKERS", num_speakers.to_string());
     }
 
     let output = command

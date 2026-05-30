@@ -17,6 +17,7 @@ pub struct SubtitleRequestedEvent {
     pub source_bucket: String,
     pub source_object_key: String,
     pub language: Option<String>,
+    pub num_speakers: Option<u32>,
     pub requested_at: String,
 }
 

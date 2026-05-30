@@ -39,22 +39,6 @@ services:
         kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic media.worker --partitions 1 --replication-factor 1
         kafka-topics --bootstrap-server kafka:9092 --list
 
-  rustfs:
-    image: rustfs/rustfs:latest
-    restart: unless-stopped
-    command:
-      - /data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      RUSTFS_ADDRESS: ":9000"
-      RUSTFS_CONSOLE_ENABLE: "true"
-      RUSTFS_ACCESS_KEY: rustfsadmin
-      RUSTFS_SECRET_KEY: rustfsadmin
-    volumes:
-      - rustfs-data:/data
-
   media-subtitle-worker:
     build:
       context: .
@@ -66,19 +50,15 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-      rustfs:
-        condition: service_started
     environment:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUMER_RESTART_DELAY_SECONDS: "5"
-      SUBTITLE_BUCKET: audio-hls
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-https://s3.twcstorage.ru}
+      S3_BUCKET: ${S3_BUCKET:-4c5face5-544c-4bc2-a2e0-57a24d243af3}
+      SUBTITLE_BUCKET: ${SUBTITLE_BUCKET:-4c5face5-544c-4bc2-a2e0-57a24d243af3}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
+      S3_REGION: ${S3_REGION:-ru-1}
       SUBTITLE_MAX_RETRIES: "3"
       TRANSCRIBER_BACKEND: mock
       PYANNOTE_ENABLED: "false"
-      RUSTFS_REGION: us-east-1
-      RUSTFS_ACCESS_KEY_ID: rustfsadmin
-      RUSTFS_SECRET_ACCESS_KEY: rustfsadmin
-      RUSTFS_ENDPOINT_URL: http://rustfs:9000
-
-volumes:
-  rustfs-data:

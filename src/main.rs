@@ -1,6 +1,6 @@
 mod consumer;
 mod kafka;
-mod loader_rustfs;
+mod loader_s3;
 mod pipeline;
 mod storage;
 mod subtitle;
@@ -16,19 +16,19 @@ use uuid::Uuid;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let rustfs_cfg =
-        loader_rustfs::Config::from_env().expect("RustFS config: set RUSTFS_* env variables");
-    let storage_client = loader_rustfs::create_client(&rustfs_cfg)
+    let s3_cfg = loader_s3::Config::from_env().expect("S3 config: set S3_* env variables");
+    let storage_client = loader_s3::create_client(&s3_cfg)
         .await
-        .expect("Failed to create RustFS client");
+        .expect("Failed to create S3 client");
     let storage: Arc<dyn storage::StorageBackend> = Arc::new(storage_client);
 
     let kafka_brokers = std::env::var("KAFKA_BROKERS")
         .expect("KAFKA_BROKERS is required (example: kafka:9092 inside Docker network)");
     let kafka = kafka::new_producer(&kafka_brokers).expect("Failed to create Kafka producer");
 
-    let subtitle_bucket =
-        std::env::var("SUBTITLE_BUCKET").unwrap_or_else(|_| "audio-hls".to_string());
+    let subtitle_bucket = std::env::var("SUBTITLE_BUCKET")
+        .or_else(|_| std::env::var("S3_BUCKET"))
+        .unwrap_or_else(|_| "4c5face5-544c-4bc2-a2e0-57a24d243af3".to_string());
     let subtitle_max_retries = std::env::var("SUBTITLE_MAX_RETRIES")
         .unwrap_or_else(|_| "3".to_string())
         .parse::<u32>()
