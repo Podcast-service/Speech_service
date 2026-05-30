@@ -69,6 +69,17 @@ pub async fn run_pipeline(
                     warn!("Failed to publish media.worker subtitle linkage: {}", e);
                 }
 
+                info!(
+                    "subtitle_worker finished: file_id={}, vtt={}/{}, srt={}/{}, language={}, segments={}",
+                    file_id,
+                    result.bucket,
+                    result.vtt_object_key,
+                    result.bucket,
+                    result.srt_object_key,
+                    result.language,
+                    result.segments
+                );
+
                 return;
             }
             Err(e) => {

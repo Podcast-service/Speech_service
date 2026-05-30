@@ -70,6 +70,20 @@ PYANNOTE_HF_TOKEN=<secret>
 }
 ```
 
+После успешной генерации сервис сохраняет этот результат для текущих потребителей
+и дополнительно публикует в `media.subtitle` совместимое с backend сообщение:
+
+```json
+{
+  "podcast_id": "uuid",
+  "content": {
+    "vtt_object_key": "media/<uuid>/subtitles.vtt",
+    "srt_object_key": "media/<uuid>/subtitles.srt"
+  },
+  "ready_at": "2026-05-31T00:00:00Z"
+}
+```
+
 ## E2E
 
 E2E-скрипт использует эти же `S3_*` переменные:

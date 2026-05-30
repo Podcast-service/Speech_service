@@ -32,6 +32,19 @@ pub struct SubtitleReadyEvent {
     pub ready_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BackendSubtitleContent {
+    pub vtt_object_key: String,
+    pub srt_object_key: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BackendSubtitleReadyEvent {
+    pub podcast_id: String,
+    pub content: BackendSubtitleContent,
+    pub ready_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleErrorEvent {
     pub file_id: String,
@@ -79,6 +92,7 @@ impl KafkaProducer {
         language: &str,
         segments: usize,
     ) -> Result<()> {
+        let ready_at = Utc::now().to_rfc3339();
         let event = SubtitleReadyEvent {
             file_id: file_id.to_string(),
             bucket: bucket.to_string(),
@@ -86,10 +100,23 @@ impl KafkaProducer {
             srt_object_key: srt_object_key.to_string(),
             language: language.to_string(),
             segments,
-            ready_at: Utc::now().to_rfc3339(),
+            ready_at: ready_at.clone(),
+        };
+        let backend_event = BackendSubtitleReadyEvent {
+            podcast_id: file_id.to_string(),
+            content: BackendSubtitleContent {
+                vtt_object_key: vtt_object_key.to_string(),
+                srt_object_key: srt_object_key.to_string(),
+            },
+            ready_at,
         };
 
-        self.send_json(&event.file_id, &event).await
+        let subtitle_result = self.send_json(&event.file_id, &event).await;
+        let backend_result = self.send_json(&event.file_id, &backend_event).await;
+        subtitle_result?;
+        backend_result?;
+
+        Ok(())
     }
 
     pub async fn send_subtitle_error(
@@ -162,4 +189,26 @@ pub type SharedKafkaProducer = Arc<KafkaProducer>;
 
 pub fn new_producer(brokers: &str) -> Result<SharedKafkaProducer> {
     Ok(Arc::new(KafkaProducer::new(brokers)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_subtitle_ready_event_uses_nested_content() {
+        let event = BackendSubtitleReadyEvent {
+            podcast_id: "11111111-1111-4111-8111-111111111111".into(),
+            content: BackendSubtitleContent {
+                vtt_object_key: "media/id/subtitles.vtt".into(),
+                srt_object_key: "media/id/subtitles.srt".into(),
+            },
+            ready_at: "2026-05-31T00:00:00Z".into(),
+        };
+        let value = serde_json::to_value(event).unwrap();
+
+        assert_eq!(value["podcast_id"], "11111111-1111-4111-8111-111111111111");
+        assert_eq!(value["content"]["vtt_object_key"], "media/id/subtitles.vtt");
+        assert_eq!(value["content"]["srt_object_key"], "media/id/subtitles.srt");
+    }
 }
