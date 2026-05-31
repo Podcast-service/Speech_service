@@ -36,54 +36,20 @@ PYANNOTE_ENABLED=true
 PYANNOTE_HF_TOKEN=<secret>
 ```
 
-## Контракт
+## Kafka Contract
 
 Сервис читает:
 
-- topic: `media.subtitle.request`
-- consumer group: `media-subtitle-worker-service`
+- `media.subtitle.request`, consumer group `media-subtitle-worker-service`.
 
-Входящее событие:
+Сервис публикует:
 
-```json
-{
-  "file_id": "uuid",
-  "source_bucket": "4c5face5-544c-4bc2-a2e0-57a24d243af3",
-  "source_object_key": "media/<uuid>/source.wav",
-  "language": "ru",
-  "num_speakers": 2,
-  "requested_at": "2026-03-22T12:34:56Z"
-}
-```
+- `media.subtitle.ready` — публичный результат генерации;
+- `media.subtitle` — backend-результат для `podcast_core`;
+- `media.subtitle.error` — публичная ошибка генерации;
+- `media.worker.events` — публичная связь HLS с VTT/SRT.
 
-Успешный результат (публичный, topic `media.subtitle.ready`):
-
-```json
-{
-  "file_id": "uuid",
-  "bucket": "4c5face5-544c-4bc2-a2e0-57a24d243af3",
-  "vtt_object_key": "media/<uuid>/subtitles.vtt",
-  "srt_object_key": "media/<uuid>/subtitles.srt",
-  "language": "ru",
-  "segments": 42,
-  "ready_at": "2026-03-22T12:35:56Z"
-}
-```
-
-После успешной генерации сервис публикует публичный результат в `media.subtitle.ready`
-и дополнительно — в `media.subtitle` совместимое с backend сообщение для `podcast_core`:
-
-```json
-{
-  "podcast_id": "uuid",
-  "content": {
-    "vtt_object_key": "media/<uuid>/subtitles.vtt",
-    "srt_object_key": "media/<uuid>/subtitles.srt"
-  },
-  "ready_at": "2026-05-31T00:00:00Z"
-}
-```
-
+Полные JSON-контракты: [`docs/kafka-contract.md`](docs/kafka-contract.md).
 
 ## E2E
 
