@@ -368,7 +368,7 @@ def main() -> int:
         raise RuntimeError("No media.worker.converted event found")
 
     ready = wait_for_event(
-        "media.subtitle",
+        "media.subtitle.ready",
         file_id,
         lambda e: "vtt_object_key" in e,
         args.wait_subtitle_seconds,

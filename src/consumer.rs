@@ -16,7 +16,7 @@ use crate::pipeline;
 use crate::storage::StorageBackend;
 use crate::transcriber::SharedTranscriber;
 
-const TOPIC: &str = "media.subtitle";
+const TOPIC: &str = "media.subtitle.request";
 const GROUP_ID: &str = "media-subtitle-worker-service";
 const WORKING_HEARTBEAT_INTERVAL_SECONDS: u64 = 120;
 

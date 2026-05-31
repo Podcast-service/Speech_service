@@ -1,6 +1,6 @@
 # Speech_service
 
-`media_subtitle_worker` слушает Kafka topic `media.subtitle`, скачивает исходный аудиообъект из S3-compatible storage, строит `VTT` и `SRT`, загружает результат обратно в S3 и публикует события `media.subtitle.ready`, `media.subtitle.error` и `media.worker`.
+`media_subtitle_worker` слушает Kafka topic `media.subtitle.request`, скачивает исходный аудиообъект из S3-compatible storage, строит `VTT` и `SRT`, загружает результат обратно в S3 и публикует события `media.subtitle.ready`, `media.subtitle.error`, `media.subtitle` для backend и `media.worker`.
 
 ## S3
 
@@ -40,7 +40,7 @@ PYANNOTE_HF_TOKEN=<secret>
 
 Сервис читает:
 
-- topic: `media.subtitle`
+- topic: `media.subtitle.request`
 - consumer group: `media-subtitle-worker-service`
 
 Входящее событие:
@@ -70,8 +70,9 @@ PYANNOTE_HF_TOKEN=<secret>
 }
 ```
 
-После успешной генерации сервис сохраняет этот результат для текущих потребителей
-и дополнительно публикует в `media.subtitle` совместимое с backend сообщение:
+Сырой успешный результат публикуется в `media.subtitle.ready`, ошибка транскрибации - в
+`media.subtitle.error`. После успешной генерации сервис дополнительно публикует в
+`media.subtitle` совместимое с backend сообщение:
 
 ```json
 {
@@ -81,6 +82,21 @@ PYANNOTE_HF_TOKEN=<secret>
     "srt_object_key": "media/<uuid>/subtitles.srt"
   },
   "ready_at": "2026-05-31T00:00:00Z"
+}
+```
+
+Для потребителей служебной привязки HLS и subtitle-файлов сервис публикует в
+`media.worker` событие с discriminator:
+
+```json
+{
+  "event": "subtitle_ready",
+  "file_id": "uuid",
+  "hls_path": "/media/<uuid>/master.m3u8",
+  "subtitle_vtt_path": "/media/<uuid>/subtitles.vtt",
+  "subtitle_srt_path": "/media/<uuid>/subtitles.srt",
+  "language": "ru",
+  "subtitle_ready_at": "2026-05-31T00:00:00Z"
 }
 ```
 

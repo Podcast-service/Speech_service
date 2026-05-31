@@ -8,7 +8,9 @@ use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const TOPIC_SUBTITLE: &str = "media.subtitle";
+const TOPIC_BACKEND_SUBTITLE: &str = "media.subtitle";
+const TOPIC_SUBTITLE_READY: &str = "media.subtitle.ready";
+const TOPIC_SUBTITLE_ERROR: &str = "media.subtitle.error";
 const TOPIC_MEDIA_WORKER: &str = "media.worker";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +57,7 @@ pub struct SubtitleErrorEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaWorkerSubtitleReadyEvent {
+    pub event: String,
     pub file_id: String,
     pub hls_path: String,
     pub subtitle_vtt_path: String,
@@ -111,8 +114,12 @@ impl KafkaProducer {
             ready_at,
         };
 
-        let subtitle_result = self.send_json(&event.file_id, &event).await;
-        let backend_result = self.send_json(&event.file_id, &backend_event).await;
+        let subtitle_result = self
+            .send_json_to_topic(TOPIC_SUBTITLE_READY, &event.file_id, &event)
+            .await;
+        let backend_result = self
+            .send_json_to_topic(TOPIC_BACKEND_SUBTITLE, &event.file_id, &backend_event)
+            .await;
         subtitle_result?;
         backend_result?;
 
@@ -132,7 +139,8 @@ impl KafkaProducer {
             timestamp: Utc::now().to_rfc3339(),
         };
 
-        self.send_json(&event.file_id, &event).await
+        self.send_json_to_topic(TOPIC_SUBTITLE_ERROR, &event.file_id, &event)
+            .await
     }
 
     pub async fn send_worker_subtitle_ready(
@@ -144,6 +152,7 @@ impl KafkaProducer {
         language: &str,
     ) -> Result<()> {
         let event = MediaWorkerSubtitleReadyEvent {
+            event: "subtitle_ready".to_string(),
             file_id: file_id.to_string(),
             hls_path: hls_path.to_string(),
             subtitle_vtt_path: subtitle_vtt_path.to_string(),
@@ -154,10 +163,6 @@ impl KafkaProducer {
 
         self.send_json_to_topic(TOPIC_MEDIA_WORKER, &event.file_id, &event)
             .await
-    }
-
-    async fn send_json<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
-        self.send_json_to_topic(TOPIC_SUBTITLE, key, value).await
     }
 
     async fn send_json_to_topic<T: Serialize>(
@@ -210,5 +215,21 @@ mod tests {
         assert_eq!(value["podcast_id"], "11111111-1111-4111-8111-111111111111");
         assert_eq!(value["content"]["vtt_object_key"], "media/id/subtitles.vtt");
         assert_eq!(value["content"]["srt_object_key"], "media/id/subtitles.srt");
+    }
+
+    #[test]
+    fn worker_subtitle_ready_event_has_discriminator() {
+        let event = MediaWorkerSubtitleReadyEvent {
+            event: "subtitle_ready".into(),
+            file_id: "11111111-1111-4111-8111-111111111111".into(),
+            hls_path: "/media/id/master.m3u8".into(),
+            subtitle_vtt_path: "/media/id/subtitles.vtt".into(),
+            subtitle_srt_path: "/media/id/subtitles.srt".into(),
+            language: "ru".into(),
+            subtitle_ready_at: "2026-05-31T00:00:00Z".into(),
+        };
+        let value = serde_json::to_value(event).unwrap();
+
+        assert_eq!(value["event"], "subtitle_ready");
     }
 }
