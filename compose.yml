@@ -62,3 +62,14 @@ services:
       SUBTITLE_MAX_RETRIES: "3"
       TRANSCRIBER_BACKEND: mock
       PYANNOTE_ENABLED: "false"
+      OTEL_SERVICE_NAME: speech_service
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+      DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-dev}
+    networks:
+      - default
+      - otel
+
+networks:
+  otel:
+    external: true
+    name: ot_collector_otel

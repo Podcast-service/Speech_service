@@ -1,9 +1,11 @@
 mod consumer;
 mod kafka;
 mod loader_s3;
+mod metrics;
 mod pipeline;
 mod storage;
 mod subtitle;
+mod telemetry;
 mod transcriber;
 
 use std::{sync::Arc, time::Duration};
@@ -14,7 +16,7 @@ use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let _telemetry = telemetry::init("speech_service");
 
     let s3_cfg = loader_s3::Config::from_env().expect("S3 config: set S3_* env variables");
     let storage_client = loader_s3::create_client(&s3_cfg)
