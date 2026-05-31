@@ -16,7 +16,7 @@ use crate::pipeline;
 use crate::storage::StorageBackend;
 use crate::transcriber::SharedTranscriber;
 
-const TOPIC: &str = "media.subtitle";
+const TOPIC: &str = "media.subtitle.request";
 const GROUP_ID: &str = "media-subtitle-worker-service";
 const WORKING_HEARTBEAT_INTERVAL_SECONDS: u64 = 120;
 
@@ -111,13 +111,13 @@ async fn handle_subtitle_requested(
     let file_id = match Uuid::parse_str(&event.file_id) {
         Ok(id) => id,
         Err(e) => {
-            warn!("Invalid file_id in media.subtitle.requested event: {}", e);
+            warn!("Invalid file_id in media.subtitle.request event: {}", e);
             return;
         }
     };
 
     info!(
-        "Received media.subtitle.requested: file_id={}, source={}/{}",
+        "Received media.subtitle.request: file_id={}, source={}/{}",
         event.file_id, event.source_bucket, event.source_object_key
     );
 
