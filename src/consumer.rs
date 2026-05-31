@@ -1,13 +1,15 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::Message;
 use tokio_stream::StreamExt;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, Instrument};
 use uuid::Uuid;
+
+use crate::metrics::metrics;
 
 use crate::kafka::{SharedKafkaProducer, SubtitleRequestedEvent};
 use crate::pipeline;
@@ -53,6 +55,7 @@ pub async fn run_subtitle_consumer(
     while let Some(result) = stream.next().await {
         match result {
             Ok(msg) => {
+                metrics().record_received();
                 let payload = match msg.payload_view::<str>() {
                     Some(Ok(text)) => text,
                     Some(Err(e)) => {
@@ -92,6 +95,10 @@ pub async fn run_subtitle_consumer(
     Ok(())
 }
 
+#[tracing::instrument(
+    skip_all,
+    fields(file_id = %event.file_id, source = %event.source_object_key)
+)]
 async fn handle_subtitle_requested(
     event: SubtitleRequestedEvent,
     worker_id: &str,
@@ -120,22 +127,31 @@ async fn handle_subtitle_requested(
     let subtitle_bucket = subtitle_bucket.to_string();
     let worker_id = worker_id.to_string();
 
-    tokio::spawn(async move {
-        let pipeline = pipeline::run_pipeline(
-            file_id,
-            event,
-            storage,
-            kafka,
-            transcriber,
-            &subtitle_bucket,
-            max_retries,
-        );
+    let pipeline_span = tracing::info_span!("subtitle_pipeline", file_id = %file_id);
+    tokio::spawn(
+        async move {
+            let started = Instant::now();
+            let pipeline = pipeline::run_pipeline(
+                file_id,
+                event,
+                storage,
+                kafka,
+                transcriber,
+                &subtitle_bucket,
+                max_retries,
+            );
 
-        tokio::select! {
-            _ = pipeline => {}
-            _ = log_working_heartbeat(worker_id, file_id) => {}
+            tokio::select! {
+                _ = pipeline => {}
+                _ = log_working_heartbeat(worker_id, file_id) => {}
+            }
+
+            let m = metrics();
+            m.record_duration(started.elapsed().as_secs_f64(), "completed");
+            m.record_processed("completed");
         }
-    });
+        .instrument(pipeline_span),
+    );
 }
 
 async fn log_working_heartbeat(worker_id: String, file_id: Uuid) {
