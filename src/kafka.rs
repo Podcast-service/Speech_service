@@ -8,8 +8,14 @@ use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Backend-результат субтитров для podcast_core (BackendSubtitleReadyEvent).
 const TOPIC_SUBTITLE: &str = "media.subtitle";
-const TOPIC_MEDIA_WORKER: &str = "media.worker";
+/// Публичный результат субтитров для внешних потребителей.
+const TOPIC_SUBTITLE_READY: &str = "media.subtitle.ready";
+/// Публичные ошибки генерации субтитров.
+const TOPIC_SUBTITLE_ERROR: &str = "media.subtitle.error";
+/// Публичный поток worker-домена: связка HLS <-> субтитры.
+const TOPIC_MEDIA_WORKER_EVENTS: &str = "media.worker.events";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleRequestedEvent {
@@ -111,7 +117,10 @@ impl KafkaProducer {
             ready_at,
         };
 
-        let subtitle_result = self.send_json(&event.file_id, &event).await;
+        // Публичное событие — на отдельный топик; backend-результат с podcast_id — в media.subtitle для core.
+        let subtitle_result = self
+            .send_json_to_topic(TOPIC_SUBTITLE_READY, &event.file_id, &event)
+            .await;
         let backend_result = self.send_json(&event.file_id, &backend_event).await;
         subtitle_result?;
         backend_result?;
@@ -132,7 +141,8 @@ impl KafkaProducer {
             timestamp: Utc::now().to_rfc3339(),
         };
 
-        self.send_json(&event.file_id, &event).await
+        self.send_json_to_topic(TOPIC_SUBTITLE_ERROR, &event.file_id, &event)
+            .await
     }
 
     pub async fn send_worker_subtitle_ready(
@@ -152,7 +162,7 @@ impl KafkaProducer {
             subtitle_ready_at: Utc::now().to_rfc3339(),
         };
 
-        self.send_json_to_topic(TOPIC_MEDIA_WORKER, &event.file_id, &event)
+        self.send_json_to_topic(TOPIC_MEDIA_WORKER_EVENTS, &event.file_id, &event)
             .await
     }
 

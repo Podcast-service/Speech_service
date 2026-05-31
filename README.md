@@ -1,6 +1,6 @@
 # Speech_service
 
-`media_subtitle_worker` слушает Kafka topic `media.subtitle`, скачивает исходный аудиообъект из S3-compatible storage, строит `VTT` и `SRT`, загружает результат обратно в S3 и публикует события `media.subtitle.ready`, `media.subtitle.error` и `media.worker`.
+`media_subtitle_worker` слушает Kafka topic `media.subtitle.request`, скачивает исходный аудиообъект из S3-compatible storage, строит `VTT` и `SRT`, загружает результат обратно в S3. Публичный результат публикуется в `media.subtitle.ready`, ошибки — в `media.subtitle.error`, связка HLS↔субтитры — в `media.worker.events`, а backend-результат для `podcast_core` — в `media.subtitle`.
 
 ## S3
 
@@ -40,7 +40,7 @@ PYANNOTE_HF_TOKEN=<secret>
 
 Сервис читает:
 
-- topic: `media.subtitle`
+- topic: `media.subtitle.request`
 - consumer group: `media-subtitle-worker-service`
 
 Входящее событие:
@@ -56,7 +56,7 @@ PYANNOTE_HF_TOKEN=<secret>
 }
 ```
 
-Успешный результат:
+Успешный результат (публичный, topic `media.subtitle.ready`):
 
 ```json
 {
@@ -70,8 +70,8 @@ PYANNOTE_HF_TOKEN=<secret>
 }
 ```
 
-После успешной генерации сервис сохраняет этот результат для текущих потребителей
-и дополнительно публикует в `media.subtitle` совместимое с backend сообщение:
+После успешной генерации сервис публикует публичный результат в `media.subtitle.ready`
+и дополнительно — в `media.subtitle` совместимое с backend сообщение для `podcast_core`:
 
 ```json
 {

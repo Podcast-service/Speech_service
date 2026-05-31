@@ -36,7 +36,11 @@ services:
       - -ec
       - |
         kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic media.subtitle --partitions 1 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic media.subtitle.request --partitions 1 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic media.subtitle.ready --partitions 1 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic media.subtitle.error --partitions 1 --replication-factor 1
         kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic media.worker --partitions 1 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic media.worker.events --partitions 1 --replication-factor 1
         kafka-topics --bootstrap-server kafka:9092 --list
 
   media-subtitle-worker:
