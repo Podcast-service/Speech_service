@@ -14,8 +14,11 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Build check
+      - name: CPU image build check
         run: docker build -t ghcr.io/podcast-service/speech_service:pr-${{ github.event.pull_request.number }} .
+
+      - name: CUDA image build check
+        run: docker build -f Dockerfile.cuda -t ghcr.io/podcast-service/speech_service:pr-${{ github.event.pull_request.number }}-cuda .
 
   deploy:
     if: github.event.pull_request.merged == true
@@ -32,7 +35,7 @@ jobs:
           echo "${{ secrets.GHCR_PAT }}" | \
           docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
 
-      - name: Build and push
+      - name: Build and push CPU image
         run: |
           docker build \
             -t ghcr.io/podcast-service/speech_service:${{ steps.vars.outputs.SHA }} \
@@ -40,6 +43,16 @@ jobs:
             .
           docker push ghcr.io/podcast-service/speech_service:${{ steps.vars.outputs.SHA }}
           docker push ghcr.io/podcast-service/speech_service:latest
+
+      - name: Build and push CUDA image
+        run: |
+          docker build \
+            -f Dockerfile.cuda \
+            -t ghcr.io/podcast-service/speech_service:${{ steps.vars.outputs.SHA }}-cuda \
+            -t ghcr.io/podcast-service/speech_service:latest-cuda \
+            .
+          docker push ghcr.io/podcast-service/speech_service:${{ steps.vars.outputs.SHA }}-cuda
+          docker push ghcr.io/podcast-service/speech_service:latest-cuda
 
       - name: Trigger deploy
         run: |

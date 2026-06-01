@@ -10,6 +10,7 @@ mod transcriber;
 
 use std::{sync::Arc, time::Duration};
 
+use tokio::sync::Semaphore;
 use tracing::{error, info};
 use transcriber::{build_transcriber, SharedTranscriber};
 use uuid::Uuid;
@@ -35,6 +36,13 @@ async fn main() {
         .unwrap_or_else(|_| "3".to_string())
         .parse::<u32>()
         .expect("SUBTITLE_MAX_RETRIES must be a positive integer");
+    let subtitle_max_concurrent_jobs = std::env::var("SUBTITLE_MAX_CONCURRENT_JOBS")
+        .unwrap_or_else(|_| "1".to_string())
+        .parse::<usize>()
+        .ok()
+        .filter(|value| *value > 0)
+        .expect("SUBTITLE_MAX_CONCURRENT_JOBS must be a positive integer");
+    let subtitle_pipeline_slots = Arc::new(Semaphore::new(subtitle_max_concurrent_jobs));
     let worker_id = subtitle_worker_id();
 
     let transcriber_backend =
@@ -60,8 +68,8 @@ async fn main() {
     .expect("Failed to initialize transcriber backend");
 
     info!(
-        "subtitle_worker started (worker_id={}, kafka={}, bucket={})",
-        worker_id, kafka_brokers, subtitle_bucket
+        "subtitle_worker started (worker_id={}, kafka={}, bucket={}, max_concurrent_jobs={})",
+        worker_id, kafka_brokers, subtitle_bucket, subtitle_max_concurrent_jobs
     );
 
     loop {
@@ -73,6 +81,7 @@ async fn main() {
             transcriber.clone(),
             subtitle_bucket.clone(),
             subtitle_max_retries,
+            subtitle_pipeline_slots.clone(),
         )
         .await
         {

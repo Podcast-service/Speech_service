@@ -1,0 +1,20 @@
+services:
+  media-subtitle-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+    environment:
+      TRANSCRIBER_BACKEND: whisper-rs
+      WHISPER_MODEL_PATH: ${WHISPER_MODEL_PATH:-/models/ggml-medium.bin}
+      PYANNOTE_ENABLED: "true"
+      PYANNOTE_DEVICE: ${PYANNOTE_DEVICE:-auto}
+      PYANNOTE_HF_TOKEN: ${PYANNOTE_HF_TOKEN:?set PYANNOTE_HF_TOKEN}
+    volumes:
+      - ${WHISPER_MODELS_DIR:-./models}:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
