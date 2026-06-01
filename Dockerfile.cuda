@@ -2,6 +2,7 @@ FROM nvidia/cuda:12.6.3-devel-ubuntu22.04 AS builder
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl cmake pkg-config build-essential clang llvm-dev libclang-dev \
+       libssl-dev libcurl4-openssl-dev zlib1g-dev libsasl2-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --profile minimal
