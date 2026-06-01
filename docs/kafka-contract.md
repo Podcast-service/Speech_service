@@ -56,12 +56,17 @@ Backend-результат успешной генерации для `podcast_c
 {
   "podcast_id": "11111111-1111-1111-1111-111111111111",
   "content": {
-    "vtt_object_key": "media/11111111-1111-1111-1111-111111111111/subtitles.vtt",
-    "srt_object_key": "media/11111111-1111-1111-1111-111111111111/subtitles.srt"
+    "vtt_object_key": "https://s3.twcstorage.ru/4c5face5-544c-4bc2-a2e0-57a24d243af3/media/11111111-1111-1111-1111-111111111111/subtitles.vtt",
+    "srt_object_key": "https://s3.twcstorage.ru/4c5face5-544c-4bc2-a2e0-57a24d243af3/media/11111111-1111-1111-1111-111111111111/subtitles.srt"
   },
   "ready_at": "2026-04-07T12:05:00Z"
 }
 ```
+
+Имена полей `vtt_object_key` и `srt_object_key` сохранены для совместимости,
+но значениями являются публичные URL в формате
+`https://s3.twcstorage.ru/<bucket>/<object_key>`.
+Для доступа без авторизации `SUBTITLE_BUCKET` должен быть публичным.
 
 ## Topic `media.subtitle.error`
 
