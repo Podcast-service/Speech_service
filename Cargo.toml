@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 whisper-rs-backend = ["dep:whisper-rs"]
+cuda = ["whisper-rs-backend", "whisper-rs/cuda"]
 
 [dependencies]
 anyhow = "1.0"

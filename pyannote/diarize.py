@@ -82,6 +82,20 @@ def _configured_max_speakers() -> int | None:
     return max_speakers
 
 
+def _resolve_device(torch):
+    configured = os.environ.get("PYANNOTE_DEVICE", "auto").strip().lower()
+    if configured in ("", "auto"):
+        configured = "cuda" if torch.cuda.is_available() else "cpu"
+
+    device = torch.device(configured)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError(
+            f"PYANNOTE_DEVICE={configured} requests CUDA, but torch.cuda.is_available() is false"
+        )
+
+    return device
+
+
 def _speaker_index(label: str) -> int | None:
     if not label.startswith("SPEAKER_"):
         return None
@@ -227,7 +241,11 @@ def _build_pipeline(hf_token: str):
     from pyannote.audio import Pipeline
 
     model_id = os.environ.get("PYANNOTE_PIPELINE", "pyannote/speaker-diarization-3.1")
-    return Pipeline.from_pretrained(model_id, use_auth_token=hf_token)
+    pipeline = Pipeline.from_pretrained(model_id, use_auth_token=hf_token)
+    device = _resolve_device(torch)
+    pipeline.to(device)
+    print(f"selected device: {device}", file=sys.stderr, flush=True)
+    return pipeline
 
 
 def _annotation_to_segments(annotation, offset_ms: int = 0) -> list[dict]:

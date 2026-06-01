@@ -11,6 +11,8 @@ use std::path::PathBuf;
 #[cfg(feature = "whisper-rs-backend")]
 use std::process::Command;
 #[cfg(feature = "whisper-rs-backend")]
+use tracing::info;
+#[cfg(feature = "whisper-rs-backend")]
 use uuid::Uuid;
 
 #[cfg(feature = "whisper-rs-backend")]
@@ -213,7 +215,12 @@ fn transcribe_with_whisper_rs(
     let wav_path = decode_to_wav_16khz_mono(input_path)?;
     let samples = read_wav_f32(&wav_path)?;
 
-    let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
+    let context_params = WhisperContextParameters::default();
+    info!(
+        "creating whisper-rs context: use_gpu={}, gpu_device={}",
+        context_params.use_gpu, context_params.gpu_device
+    );
+    let ctx = WhisperContext::new_with_params(model_path, context_params)
         .map_err(|e| anyhow::anyhow!("whisper context init failed: {}", e))?;
     let mut state = ctx
         .create_state()
@@ -447,6 +454,11 @@ fn run_pyannote_diarization(
                 stderr.trim().to_string()
             }
         ));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        info!("pyannote: {}", stderr.trim());
     }
 
     let json_text = std::fs::read_to_string(&output_json)

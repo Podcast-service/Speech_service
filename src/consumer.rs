@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::Message;
+use tokio::sync::Semaphore;
 use tokio_stream::StreamExt;
 use tracing::{error, info, warn, Instrument};
 use uuid::Uuid;
@@ -28,6 +29,7 @@ pub async fn run_subtitle_consumer(
     transcriber: SharedTranscriber,
     subtitle_bucket: String,
     max_retries: u32,
+    pipeline_slots: Arc<Semaphore>,
 ) -> Result<()> {
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", brokers)
@@ -83,6 +85,7 @@ pub async fn run_subtitle_consumer(
                     &transcriber,
                     &subtitle_bucket,
                     max_retries,
+                    &pipeline_slots,
                 )
                 .await;
             }
@@ -107,6 +110,7 @@ async fn handle_subtitle_requested(
     transcriber: &SharedTranscriber,
     subtitle_bucket: &str,
     max_retries: u32,
+    pipeline_slots: &Arc<Semaphore>,
 ) {
     let file_id = match Uuid::parse_str(&event.file_id) {
         Ok(id) => id,
@@ -126,10 +130,22 @@ async fn handle_subtitle_requested(
     let transcriber = transcriber.clone();
     let subtitle_bucket = subtitle_bucket.to_string();
     let worker_id = worker_id.to_string();
+    let pipeline_slots = pipeline_slots.clone();
 
     let pipeline_span = tracing::info_span!("subtitle_pipeline", file_id = %file_id);
     tokio::spawn(
         async move {
+            let _pipeline_slot = match pipeline_slots.acquire_owned().await {
+                Ok(permit) => permit,
+                Err(e) => {
+                    error!(
+                        "Subtitle pipeline concurrency limiter closed for file_id={}: {}",
+                        file_id, e
+                    );
+                    return;
+                }
+            };
+
             let started = Instant::now();
             let pipeline = pipeline::run_pipeline(
                 file_id,

@@ -19,6 +19,10 @@ S3_SECRET_ACCESS_KEY=<secret>
 
 `S3_CREATE_BUCKET=true` можно использовать только если окружение должно создавать бакет автоматически. Для managed S3 бакет обычно уже создан инфраструктурой.
 
+Число одновременно работающих pipeline на один экземпляр сервиса задаётся через
+`SUBTITLE_MAX_CONCURRENT_JOBS`. По умолчанию запускается один pipeline; остальные
+полученные запросы ожидают свободный слот.
+
 ## Запуск
 
 Smoke-режим с `mock` transcriber:
@@ -35,6 +39,29 @@ WHISPER_MODEL_PATH=/models/ggml-medium.bin
 PYANNOTE_ENABLED=true
 PYANNOTE_HF_TOKEN=<secret>
 ```
+
+### Запуск с NVIDIA GPU
+
+На сервере должны быть установлены NVIDIA driver и NVIDIA Container Toolkit.
+CUDA-сборка включает GPU backend для `whisper-rs`, устанавливает CUDA wheel для
+PyTorch и автоматически переносит pyannote pipeline на GPU, если CUDA доступна.
+
+```env
+WHISPER_MODELS_DIR=/path/to/models
+WHISPER_MODEL_PATH=/models/ggml-medium.bin
+PYANNOTE_HF_TOKEN=<secret>
+```
+
+```bash
+docker compose -f compose.yml -f compose.gpu.yml up -d --build \
+  kafka kafka-init media-subtitle-worker
+```
+
+`PYANNOTE_DEVICE=auto` используется по умолчанию. Для диагностики можно явно
+задать `PYANNOTE_DEVICE=cpu` или `PYANNOTE_DEVICE=cuda`. Выбранное устройство
+попадает в лог `pyannote: selected device: ...`. Для Whisper лог
+`creating whisper-rs context: use_gpu=..., gpu_device=...` показывает запрос
+на использование GPU.
 
 ## Kafka Contract
 
