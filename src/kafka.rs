@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 /// Backend-результат субтитров для podcast_core (BackendSubtitleReadyEvent).
 const TOPIC_SUBTITLE: &str = "media.subtitle";
+const PUBLIC_S3_BASE_URL: &str = "https://s3.twcstorage.ru";
 /// Публичный результат субтитров для внешних потребителей.
 const TOPIC_SUBTITLE_READY: &str = "media.subtitle.ready";
 /// Публичные ошибки генерации субтитров.
@@ -108,14 +109,13 @@ impl KafkaProducer {
             segments,
             ready_at: ready_at.clone(),
         };
-        let backend_event = BackendSubtitleReadyEvent {
-            podcast_id: file_id.to_string(),
-            content: BackendSubtitleContent {
-                vtt_object_key: vtt_object_key.to_string(),
-                srt_object_key: srt_object_key.to_string(),
-            },
+        let backend_event = backend_subtitle_ready_event(
+            &event.file_id,
+            bucket,
+            vtt_object_key,
+            srt_object_key,
             ready_at,
-        };
+        );
 
         // Публичное событие — на отдельный топик; backend-результат с podcast_id — в media.subtitle для core.
         let subtitle_result = self
@@ -201,24 +201,55 @@ pub fn new_producer(brokers: &str) -> Result<SharedKafkaProducer> {
     Ok(Arc::new(KafkaProducer::new(brokers)?))
 }
 
+fn backend_subtitle_ready_event(
+    podcast_id: &str,
+    bucket: &str,
+    vtt_object_key: &str,
+    srt_object_key: &str,
+    ready_at: String,
+) -> BackendSubtitleReadyEvent {
+    BackendSubtitleReadyEvent {
+        podcast_id: podcast_id.to_string(),
+        content: BackendSubtitleContent {
+            vtt_object_key: public_s3_object_url(bucket, vtt_object_key),
+            srt_object_key: public_s3_object_url(bucket, srt_object_key),
+        },
+        ready_at,
+    }
+}
+
+fn public_s3_object_url(bucket: &str, object_key: &str) -> String {
+    format!(
+        "{}/{}/{}",
+        PUBLIC_S3_BASE_URL,
+        bucket.trim_matches('/'),
+        object_key.trim_start_matches('/')
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn backend_subtitle_ready_event_uses_nested_content() {
-        let event = BackendSubtitleReadyEvent {
-            podcast_id: "11111111-1111-4111-8111-111111111111".into(),
-            content: BackendSubtitleContent {
-                vtt_object_key: "media/id/subtitles.vtt".into(),
-                srt_object_key: "media/id/subtitles.srt".into(),
-            },
-            ready_at: "2026-05-31T00:00:00Z".into(),
-        };
+    fn backend_subtitle_ready_event_uses_public_urls_in_nested_content() {
+        let event = backend_subtitle_ready_event(
+            "11111111-1111-4111-8111-111111111111",
+            "subtitle-bucket",
+            "media/id/subtitles.vtt",
+            "media/id/subtitles.srt",
+            "2026-05-31T00:00:00Z".into(),
+        );
         let value = serde_json::to_value(event).unwrap();
 
         assert_eq!(value["podcast_id"], "11111111-1111-4111-8111-111111111111");
-        assert_eq!(value["content"]["vtt_object_key"], "media/id/subtitles.vtt");
-        assert_eq!(value["content"]["srt_object_key"], "media/id/subtitles.srt");
+        assert_eq!(
+            value["content"]["vtt_object_key"],
+            "https://s3.twcstorage.ru/subtitle-bucket/media/id/subtitles.vtt"
+        );
+        assert_eq!(
+            value["content"]["srt_object_key"],
+            "https://s3.twcstorage.ru/subtitle-bucket/media/id/subtitles.srt"
+        );
     }
 }
