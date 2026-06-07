@@ -237,6 +237,8 @@ fn transcribe_with_whisper_rs(
     params.set_print_timestamps(false);
     params.set_translate(false);
     params.set_no_timestamps(false);
+    params.set_no_context(true);
+    params.set_n_max_text_ctx(0);
 
     match requested_language {
         Some(lang) if !lang.trim().is_empty() && lang != "auto" => {
